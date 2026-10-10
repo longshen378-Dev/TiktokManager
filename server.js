@@ -7,6 +7,7 @@ import { parseUsername, fetchProfile, ProfileError } from './lib/tiktok.js';
 import { parseVideoLink, fetchVideo, discoverChannelVideos, engagementRate, summarizeVideos } from './lib/videos.js';
 import { createBrowserScanner } from './lib/browser-scanner.js';
 import { createScanManager } from './lib/scans.js';
+import { DEFAULT_DELAY_SECONDS } from './lib/pacer.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const fields = ['username', 'displayName', 'profileUrl', 'followers', 'following', 'likes', 'videos', 'verified', 'privateAccount', 'bio', 'group', 'status', 'notes', 'lastSuccessAt', 'syncError'];
@@ -49,6 +50,7 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
   const discover=(username,options)=>useBrowser?browser.discover(username,options):videoDiscoverer(username,videoDiscoverer===discoverChannelVideos?options?.fetcher:options);
   const refresh=(link,username,options)=>useBrowser?browser.video(link,username,options):videoFetcher(link,username,videoFetcher===fetchVideo?options?.fetcher:options);
   const scans=createScanManager({store,discover,refresh});
+  const videoRefreshes=new Map();
   let queue = Promise.resolve();
   const running = new Map();
   function queued(key, action) {
@@ -71,21 +73,31 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
   }
   function annotatedVideo(video) {
     const history = store.videoHistory(video.username, video.id);
-    const previous = history[1];
+    const latest=history[0];
+    const previous = history.slice(1).find(item=>item.source===latest?.source&&(item.metricSource||null)===(latest?.metricSource||null));
     return { ...video, engagementRate: engagementRate(video),
       viewGrowth: previous?.views != null && history[0]?.views != null ? history[0].views - previous.views : null,
       growthSince: previous?.capturedAt || null };
   }
   function videoPayload(username, days = 0) {
     const videos = store.listVideos(username).map(annotatedVideo);
-    return { videos, summary: summarizeVideos(videos, days), discovery: store.getVideoSync(username), scan:scans.state(username), browserAvailable:browser.available };
+    return { videos, summary: summarizeVideos(videos, days), discovery: store.getVideoSync(username), scan:scans.state(username), videoRefresh:videoRefreshes.get(username)||null, browserAvailable:browser.available };
   }
-  function syncVideo(username, id) {
+  function syncVideo(username, id, delaySeconds=DEFAULT_DELAY_SECONDS) {
     return queued(`video:${username}:${id}`, async () => {
       const video = store.getVideo(username,id);
       if (!video) return null;
-      try { return store.videoSuccess(username,id,await refresh(video.url,username)); }
-      catch (error) { return store.videoFailure(username,id,error instanceof ProfileError ? error : new ProfileError('FETCH_ERROR','Không cập nhật được video. Hãy thử lại sau.')); }
+      const state={status:'running',phase:'queued',id,delaySeconds,startedAt:new Date().toISOString(),message:'Đang xếp hàng đọc lại trang video.',nextAt:null};videoRefreshes.set(username,state);
+      try {
+        const data=await refresh(video.url,username,{delayMs:delaySeconds*1000,onProgress:updates=>Object.assign(state,updates)});
+        const updated=store.videoSuccess(username,id,data);
+        state.status=updated?.syncError?'failed':'completed';state.message=updated?.syncError||'Đã cập nhật số liệu video.';state.errorCode=updated?.syncCode;
+        return updated;
+      }
+      catch (error) {
+        const safe=error instanceof ProfileError?error:new ProfileError('FETCH_ERROR','Không cập nhật được video. Hãy thử lại sau.');
+        Object.assign(state,{status:'failed',message:safe.message,errorCode:safe.code});return store.videoFailure(username,id,safe);
+      } finally {state.nextAt=null;state.phase=state.status;}
     });
   }
   const server = createServer(async (request, response) => {
@@ -132,7 +144,7 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
         if (request.method === 'GET' && !action) return send(200,videoPayload(username,days));
         if(action==='scan') {
           if(request.method==='GET'&&!subaction)return send(200,{scan:scans.state(username)});
-          if(request.method==='POST'&&!subaction){const body=await jsonBody(request);return send(202,{scan:scans.start(username,{delaySeconds:body.delaySeconds??5,limit:body.limit??50})});}
+          if(request.method==='POST'&&!subaction){const body=await jsonBody(request);return send(202,{scan:scans.start(username,{delaySeconds:body.delaySeconds??DEFAULT_DELAY_SECONDS,limit:body.limit??50,verifyDetails:body.verifyDetails??true})});}
           if(request.method==='POST'&&subaction==='cancel'){await jsonBody(request);return send(200,{scan:scans.cancel(username)});}
         }
         if (request.method === 'GET' && action === 'export.csv' && !subaction) {
@@ -180,7 +192,9 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
           if (!store.getVideo(username,id)) return send(404,{error:'Video chưa được theo dõi.'});
           if (request.method === 'GET' && subaction === 'history') return send(200,{history:store.videoHistory(username,id)});
           if (request.method === 'POST' && subaction === 'refresh') {
-            await jsonBody(request); const video = await syncVideo(username,id);
+            const body=await jsonBody(request);const delaySeconds=body.delaySeconds??DEFAULT_DELAY_SECONDS;
+            if(!Number.isInteger(delaySeconds)||delaySeconds<3||delaySeconds>60)throw new ProfileError('BAD_REQUEST','Độ trễ cần 3–60 giây.');
+            const video = await syncVideo(username,id,delaySeconds);
             return video ? send(200,{video:annotatedVideo(video)}) : send(404,{error:'Video đã bị xóa.'});
           }
           if (request.method === 'POST' && subaction === 'metrics') {

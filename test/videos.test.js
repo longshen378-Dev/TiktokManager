@@ -23,6 +23,8 @@ test('extracts video hydration with counts, date, duration; unknown counters are
   assert.equal(parsed.views,1000);assert.equal(parsed.comments,20);assert.equal(parsed.duration,30);assert.ok(parsed.publishedAt);
   const partial=extractVideo(html({'webapp.video-detail':{itemInfo:{itemStruct:item({stats:{playCount:0,shareCount:-1}})}}}),username,id);
   assert.equal(partial.views,0);assert.equal(partial.likes,null);assert.equal(partial.shares,null);
+  const mixed=extractVideo(html({'webapp.video-detail':{itemInfo:{itemStruct:item({statsV2:{playCount:'2200000',diggCount:null}})}}}),username,id);
+  assert.equal(mixed.views,2200000);assert.equal(mixed.likes,100);assert.equal(mixed.comments,20);
   assert.throws(()=>extractVideo(html({'webapp.video-detail':{itemInfo:{itemStruct:item({author:{uniqueId:'other'}})}}}),username,id));
   assert.throws(()=>extractVideo('<p class="_wafchallengeid">Please wait</p>',username,id),e=>e.code==='TIKTOK_CHALLENGE');
 });
@@ -91,4 +93,26 @@ test('HTTP video workflow validates import atomically, discovers, snapshots, exp
     assert.equal(store.getVideo(username,id).source,'manual');assert.equal(store.getVideo(username,id).views,2000);
     assert.equal((await request('/'+id,'DELETE',{})).status,200);assert.equal(store.videoHistory(username,id).length,0);
   }finally{await new Promise(resolve=>server.close(resolve));store.close();}
+});
+test('cached channel-list metrics cannot replace an existing detail snapshot or change its timestamp',()=>{
+ const store=createStore(':memory:');store.add(username);store.addVideo(username,id);
+ try{
+  const exact=store.videoSuccess(username,id,{...video,views:2200000,likes:217600,source:'browser',metricSource:'video-detail'});
+  const retained=store.videoSuccess(username,id,{...video,source:'browser',metricSource:'channel-list',caption:'New caption'});
+  assert.equal(retained.views,2200000);assert.equal(retained.likes,217600);assert.equal(retained.caption,'New caption');assert.equal(retained.lastSuccessAt,exact.lastSuccessAt);assert.equal(store.videoHistory(username,id).length,1);
+  store.videoSuccess(username,id,{...video,views:2200100,source:'browser',metricSource:'video-detail'});assert.equal(store.getVideo(username,id).views,2200100);assert.equal(store.videoHistory(username,id).length,2);
+  const manual=store.videoSuccess(username,id,{views:123,source:'manual'});assert.equal(manual.metricSource,null);assert.equal(manual.source,'manual');
+ }finally{store.close();}
+});
+test('view growth compares matching sources rather than treating a list-to-detail correction as new views',async()=>{
+ const store=createStore(':memory:');store.add(username);store.addVideo(username,id);
+ store.videoSuccess(username,id,{...video,source:'browser',metricSource:'channel-list'});
+ const {server}=createApp({store});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const request=()=>fetch(`http://127.0.0.1:${server.address().port}/api/accounts/${username}/videos`).then(r=>r.json());
+ try{
+  store.videoSuccess(username,id,{...video,views:2200000,source:'browser',metricSource:'video-detail'});
+  assert.equal((await request()).videos[0].viewGrowth,null);
+  store.videoSuccess(username,id,{...video,views:2200200,source:'browser',metricSource:'video-detail'});
+  assert.equal((await request()).videos[0].viewGrowth,200);
+ }finally{await new Promise(resolve=>server.close(resolve));store.close();}
 });
