@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10111b"><title>TikTok Manager · Quản lý tài khoản</title>
+  <link rel="stylesheet" href="/styles.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="TikTok Manager"><span class="brand-icon">♪</span><span>TikTok<span class="brand-sub">MANAGER</span></span></a>
+    <div class="nav-label">KHÔNG GIAN LÀM VIỆC</div>
+    <a class="nav-item selected" href="/">▦ <span>Tài khoản của tôi</span><span id="nav-count" class="counter">0</span></a>
+    <div class="side-bottom"><span class="local-dot"></span><span>Lưu trữ trên máy chủ<small>Thông tin công khai · Không cần đăng nhập</small></span></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Không gian làm việc <span class="crumb">/</span> <strong>Tài khoản</strong></span><span class="workspace-badge">Cá nhân</span></header>
+    <section class="workspace">
+      <div class="page-heading"><div><div class="eyebrow">QUẢN LÝ KÊNH TIKTOK</div><h1>Tất cả tài khoản, một nơi.</h1><p>Theo dõi các kênh của bạn. Nắm rõ con số. Sắp xếp công việc.</p></div><a href="/api/export.csv" class="button secondary export-button">↓ <span>Xuất CSV</span></a></div>
+      <div class="metrics">
+        <article class="metric"><span>Tài khoản đang quản lý</span><strong id="total-accounts">0</strong><small id="active-count">0 đang hoạt động</small><span class="metric-icon">▦</span></article>
+        <article class="metric"><span>Tổng người theo dõi</span><strong id="total-followers">—</strong><small id="followers-coverage">Chưa có dữ liệu</small><span class="metric-icon cyan">♧</span></article>
+        <article class="metric"><span>Tổng lượt thích</span><strong id="total-likes">—</strong><small id="likes-coverage">Chưa có dữ liệu</small><span class="metric-icon pink">♡</span></article>
+        <article class="metric"><span>Cần cập nhật dữ liệu</span><strong id="pending-count">0</strong><small id="sync-summary">Thêm kênh để bắt đầu</small><span class="metric-icon gold">↻</span></article>
+      </div>
+      <section class="add-panel" aria-labelledby="add-title">
+        <div class="add-intro"><span class="add-icon">＋</span><div><h2 id="add-title">Thêm tài khoản mới</h2><p>Dán link hồ sơ hoặc @username. Mỗi dòng một tài khoản.</p></div></div>
+        <form id="add-form"><label class="sr-only" for="links">Link hồ sơ TikTok</label><textarea id="links" rows="1" placeholder="https://www.tiktok.com/@nopro0609" required></textarea><button type="submit" class="button primary" id="add-button">＋ Thêm tài khoản</button></form>
+        <p class="helper">Lấy tên hiển thị, bio và các chỉ số công khai. TikTok có thể giới hạn truy cập; dữ liệu chưa lấy được sẽ hiển thị “—”.</p>
+      </section>
+      <section class="accounts-panel" aria-labelledby="accounts-title">
+        <div class="section-heading"><h2 id="accounts-title">Danh sách tài khoản <span id="list-count" class="count-pill">0</span></h2><button class="button secondary compact" id="refresh-all">↻ Cập nhật tất cả</button></div>
+        <div class="filters"><label class="search"><span>⌕</span><input type="search" id="search" placeholder="Tìm tài khoản, bio, ghi chú…" aria-label="Tìm tài khoản"></label><select id="group-filter" aria-label="Lọc theo nhóm"><option value="">Tất cả nhóm</option></select><select id="status-filter" aria-label="Lọc theo trạng thái"><option value="">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="paused">Tạm dừng</option><option value="review">Cần xem lại</option></select><select id="sort" aria-label="Sắp xếp"><option value="newest">Mới thêm</option><option value="followers">Nhiều follower nhất</option><option value="name">Tên tài khoản A–Z</option></select></div>
+        <div id="load-error" class="load-error" hidden></div>
+        <div class="table-wrap"><table><thead><tr><th>TÀI KHOẢN</th><th>NGƯỜI THEO DÕI</th><th>LƯỢT THÍCH</th><th>VIDEO</th><th>NHÓM / TRẠNG THÁI</th><th>CẬP NHẬT</th><th><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="account-rows"></tbody></table></div>
+        <div id="empty" class="empty"><div class="empty-icon">♪</div><h3>Danh sách kênh của bạn bắt đầu ở đây</h3><p>Thêm link TikTok đầu tiên để lưu thông tin,<br>theo dõi chỉ số và quản lý công việc.</p><button id="empty-add" class="button secondary">＋ Thêm kênh đầu tiên</button></div>
+        <div class="table-footer"><span id="visible-count">0 tài khoản</span><span><span class="local-dot"></span> Dữ liệu được lưu bằng SQLite</span></div>
+      </section>
+      <footer class="page-footer">Chỉ quản lý thông tin hồ sơ công khai. Không tự động đăng bài hoặc đăng nhập tài khoản TikTok.</footer>
+    </section>
+  </main>
+  <dialog id="detail-dialog"><div class="dialog-heading"><span class="eyebrow">CHI TIẾT TÀI KHOẢN</span><button type="button" class="icon-button" id="close-dialog" aria-label="Đóng">×</button></div><div id="detail-profile"></div><form id="edit-form"><div class="edit-grid"><label>Nhóm<input id="edit-group" maxlength="80" placeholder="VD: Kênh bán hàng"></label><label>Trạng thái<select id="edit-status"><option value="active">Đang hoạt động</option><option value="paused">Tạm dừng</option><option value="review">Cần xem lại</option></select></label></div><label>Ghi chú<textarea id="edit-notes" rows="3" maxlength="5000" placeholder="Mục tiêu, người phụ trách, việc cần làm…"></textarea></label><div class="dialog-actions"><a id="open-profile" target="_blank" rel="noopener noreferrer" class="button secondary">Mở TikTok ↗</a><button class="button primary" id="save-button">Lưu thay đổi</button></div></form><section class="history"><h3>Lịch sử người theo dõi</h3><div id="history-content"></div></section></dialog>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

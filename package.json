@@ -1,0 +1,13 @@
+{
+  "name": "tiktok-manager",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.19.0" },
+  "scripts": {
+    "start": "node --use-env-proxy server.js",
+    "open": "node --use-env-proxy launch.js",
+    "dev": "node --use-env-proxy --watch server.js",
+    "test": "node --test"
+  }
+}
