@@ -40,5 +40,27 @@
   </main>
   <dialog id="detail-dialog"><div class="dialog-heading"><span class="eyebrow">CHI TIẾT TÀI KHOẢN</span><button type="button" class="icon-button" id="close-dialog" aria-label="Đóng">×</button></div><div id="detail-profile"></div><form id="edit-form"><div class="edit-grid"><label>Nhóm<input id="edit-group" maxlength="80" placeholder="VD: Kênh bán hàng"></label><label>Trạng thái<select id="edit-status"><option value="active">Đang hoạt động</option><option value="paused">Tạm dừng</option><option value="review">Cần xem lại</option></select></label></div><label>Ghi chú<textarea id="edit-notes" rows="3" maxlength="5000" placeholder="Mục tiêu, người phụ trách, việc cần làm…"></textarea></label><div class="dialog-actions"><a id="open-profile" target="_blank" rel="noopener noreferrer" class="button secondary">Mở TikTok ↗</a><button class="button primary" id="save-button">Lưu thay đổi</button></div></form><section class="history"><h3>Lịch sử người theo dõi</h3><div id="history-content"></div></section></dialog>
   <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="video-dialog" class="video-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">HIỆU SUẤT VIDEO</span><h2 id="video-channel-name"></h2></div><button class="icon-button" id="close-videos" aria-label="Đóng hiệu suất video">×</button></div>
+    <div class="video-toolbar"><select id="video-period" aria-label="Chọn video theo ngày đăng"><option value="0">Tất cả ngày đăng</option><option value="7">Đăng trong 7 ngày</option><option value="30">Đăng trong 30 ngày</option><option value="90">Đăng trong 90 ngày</option></select><button class="button secondary compact" id="discover-videos">⌕ Tìm video của kênh</button><button class="button secondary compact" id="refresh-videos">↻ Cập nhật video</button><a class="button secondary compact" id="export-videos">↓ Xuất CSV video</a></div>
+    <p class="helper" id="video-coverage"></p><p class="helper">Chỉ phân tích video đã theo dõi. Bộ lọc chọn theo ngày đăng; chỉ số là tổng tích lũy của video, không phải lượt xem phát sinh trong khoảng ngày.</p>
+    <div id="video-warning" class="detail-warning" hidden></div>
+    <div id="video-summary" class="video-summary"></div>
+    <section class="video-chart-section"><h3>Video có nhiều lượt xem nhất</h3><div id="video-chart"></div></section>
+    <form id="video-add-form" class="video-add-form"><label for="video-links">Theo dõi thêm video của kênh <span class="helper">· mỗi dòng một link, tối đa 50</span></label><div class="video-add-row"><textarea id="video-links" rows="2" required placeholder="https://www.tiktok.com/@username/video/ID"></textarea><button id="add-video-button" class="button primary">＋ Thêm video</button></div></form>
+    <div class="video-list-heading"><h3>Video đang theo dõi</h3><select id="video-sort" aria-label="Sắp xếp video"><option value="views">Lượt xem cao nhất</option><option value="publishedAt">Ngày đăng mới nhất</option><option value="engagementRate">Tương tác cao nhất</option><option value="viewGrowth">Tăng lượt xem nhiều nhất</option></select></div>
+    <div class="table-wrap video-table"><table><thead><tr><th>VIDEO / NGUỒN SỐ LIỆU</th><th>NGÀY ĐĂNG</th><th>LƯỢT XEM</th><th>TĂNG LƯỢT XEM</th><th>TƯƠNG TÁC</th><th>THÍCH</th><th>BÌNH LUẬN</th><th>CHIA SẺ</th><th>LƯU</th><th>THAO TÁC</th></tr></thead><tbody id="video-rows"></tbody></table></div>
+    <p id="video-empty" class="video-empty">Chưa theo dõi video nào. Tìm video của kênh hoặc dán link video để bắt đầu.</p>
+    <p class="helper">Tương tác = (thích + bình luận + chia sẻ) / lượt xem × 100%. Chỉ tính khi đủ số liệu và lượt xem &gt; 0. Tăng lượt xem so với lần lưu số liệu thành công trước; số liệu nhập tay được ghi rõ nguồn.</p>
+  </dialog>
+  <dialog id="video-detail-dialog" class="video-detail-dialog">
+    <div class="dialog-heading"><span class="eyebrow">LỊCH SỬ & SỐ LIỆU VIDEO</span><button class="icon-button" id="close-video-detail" aria-label="Đóng lịch sử video">×</button></div>
+    <a id="video-detail-link" class="video-detail-link" target="_blank" rel="noopener noreferrer"></a>
+    <p id="video-detail-error" class="detail-warning" hidden></p>
+    <form id="video-metrics-form"><p class="helper">Nếu TikTok giới hạn truy xuất, bạn có thể nhập số liệu đang thấy trên TikTok. Mốc này sẽ được đánh dấu “Nhập tay”, không phải dữ liệu tự truy xuất. Để trống chỉ số chưa biết.</p><div class="manual-metrics">
+      <label>Lượt xem<input type="number" min="0" step="1" id="manual-views" required></label><label>Lượt thích<input type="number" min="0" step="1" id="manual-likes"></label><label>Bình luận<input type="number" min="0" step="1" id="manual-comments"></label><label>Chia sẻ<input type="number" min="0" step="1" id="manual-shares"></label><label>Lượt lưu<input type="number" min="0" step="1" id="manual-saves"></label>
+    </div><button class="button primary" id="save-video-metrics">Lưu số liệu nhập tay</button></form>
+    <section class="history"><h3>Lịch sử chỉ số</h3><div id="video-history"></div></section>
+  </dialog>
 </body>
 </html>

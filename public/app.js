@@ -1,3 +1,4 @@
+import { openVideos as openVideoPanel } from './videos.js';
 const $ = selector => document.querySelector(selector);
 const state = { accounts: [], syncing: new Set(), detail: null, refreshingAll: false };
 const statuses = { active: 'Đang hoạt động', paused: 'Tạm dừng', review: 'Cần xem lại' };
@@ -58,7 +59,7 @@ function render() {
   $('#account-rows').innerHTML = visible.map(account => {
     const busy = state.syncing.has(account.username);
     const sync = busy ? 'Đang lấy dữ liệu…' : account.syncError ? 'Chưa lấy được dữ liệu' : account.lastSuccessAt ? 'Đã đồng bộ' : 'Chưa lấy dữ liệu';
-    return `<tr><td><div class="profile-cell">${avatar(account)}<div><button class="profile-link" data-action="detail" data-user="${escape(account.username)}">${escape(account.displayName || account.username)}${account.verified ? '<span class="verified" title="Đã xác minh">✓</span>' : ''}</button><div class="username">@${escape(account.username)}</div></div></div></td><td class="num" title="${number(account.followers)}">${compact(account.followers)}</td><td class="num" title="${number(account.likes)}">${compact(account.likes)}</td><td class="num">${number(account.videos)}</td><td><div class="group">${escape(account.group || 'Chưa phân nhóm')}</div><span class="status ${account.status}">${statuses[account.status]}</span></td><td><div class="sync-status ${account.syncError ? 'sync-error' : ''}" title="${escape(account.syncError || '')}">${sync}<span class="sync-time">${account.lastSuccessAt ? escape(date(account.lastSuccessAt)) : '—'}</span></div></td><td><div class="row-actions"><button class="icon-button" data-action="refresh" data-user="${escape(account.username)}" aria-label="Cập nhật @${escape(account.username)}" ${busy ? 'disabled' : ''}>↻</button><button class="icon-button" data-action="detail" data-user="${escape(account.username)}" aria-label="Chi tiết @${escape(account.username)}">⋯</button><button class="icon-button danger" data-action="delete" data-user="${escape(account.username)}" aria-label="Xóa @${escape(account.username)}">×</button></div></td></tr>`;
+    return `<tr><td><div class="profile-cell">${avatar(account)}<div><button class="profile-link" data-action="detail" data-user="${escape(account.username)}">${escape(account.displayName || account.username)}${account.verified ? '<span class="verified" title="Đã xác minh">✓</span>' : ''}</button><div class="username">@${escape(account.username)}</div></div></div></td><td class="num" title="${number(account.followers)}">${compact(account.followers)}</td><td class="num" title="${number(account.likes)}">${compact(account.likes)}</td><td class="num"><button class="video-entry" data-action="videos" data-user="${escape(account.username)}" aria-label="Hiệu suất video @${escape(account.username)}">${number(account.videos)} <span>Phân tích ↗</span></button></td><td><div class="group">${escape(account.group || 'Chưa phân nhóm')}</div><span class="status ${account.status}">${statuses[account.status]}</span></td><td><div class="sync-status ${account.syncError ? 'sync-error' : ''}" title="${escape(account.syncError || '')}">${sync}<span class="sync-time">${account.lastSuccessAt ? escape(date(account.lastSuccessAt)) : '—'}</span></div></td><td><div class="row-actions"><button class="icon-button" data-action="refresh" data-user="${escape(account.username)}" aria-label="Cập nhật @${escape(account.username)}" ${busy ? 'disabled' : ''}>↻</button><button class="icon-button" data-action="detail" data-user="${escape(account.username)}" aria-label="Chi tiết @${escape(account.username)}">⋯</button><button class="icon-button danger" data-action="delete" data-user="${escape(account.username)}" aria-label="Xóa @${escape(account.username)}">×</button></div></td></tr>`;
   }).join('');
   document.querySelectorAll('img.avatar').forEach(img => img.addEventListener('error', () => {
     const replacement = document.createElement('span'); replacement.className = 'avatar'; replacement.textContent = '♪'; img.replaceWith(replacement);
@@ -105,6 +106,7 @@ $('#account-rows').addEventListener('click', async event => {
   const username = button.dataset.user;
   if (button.dataset.action === 'refresh') return void refreshAccount(username);
   if (button.dataset.action === 'detail') return void openDetail(username);
+  if (button.dataset.action === 'videos') return void openVideos(username);
   if (button.dataset.action === 'delete' && confirm(`Xóa @${username} cùng ghi chú và lịch sử khỏi danh sách?`)) {
     try {
       await api(`/api/accounts/${encodeURIComponent(username)}`, { method: 'DELETE', body: '{}' });
@@ -132,6 +134,10 @@ async function openDetail(username) {
     }
     $('#history-content').innerHTML = chart + `<table><thead><tr><th>Thời điểm</th><th>Người theo dõi</th><th>Thay đổi</th></tr></thead><tbody>${history.slice(0, 15).map((item, index) => { const old = history[index+1]; const delta = old?.followers != null && item.followers != null ? item.followers - old.followers : null; return `<tr><td>${escape(date(item.capturedAt))}</td><td>${number(item.followers)}</td><td>${delta == null ? '—' : (delta > 0 ? '+' : '') + number(delta)}</td></tr>`; }).join('')}</tbody></table><p>Hiển thị 15 mốc mới nhất. Chỉ lưu dữ liệu thật từ những lần truy xuất thành công.</p>`;
   } catch (error) { if (state.detail === username) $('#history-content').textContent = error.message; }
+}
+function openVideos(username) {
+  const account = state.accounts.find(item => item.username === username);
+  if (account) return openVideoPanel(account, toast);
 }
 $('#close-dialog').addEventListener('click', () => $('#detail-dialog').close());
 $('#detail-dialog').addEventListener('close', () => state.detail = null);
