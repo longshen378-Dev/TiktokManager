@@ -3,8 +3,10 @@ const num = value => value == null ? '—' : new Intl.NumberFormat('vi-VN', { ma
 const percent = value => value == null ? '—' : `${num(value)}%`;
 const date = value => value ? new Date(value).toLocaleString('vi-VN') : 'Chưa biết';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
-const source = value => value === 'manual' ? 'Nhập tay' : value === 'public-page' ? 'TikTok công khai' : 'Chưa có số liệu';
-const state = { username: null, videos: [], summary: null, discovery: {}, busy: new Set(), batch: false, discovering: false, detail: null, loadToken: 0 };
+const source = value => value === 'manual' ? 'Nhập tay' : value === 'browser' ? 'TikTok · trình duyệt' : value === 'public-page' ? 'TikTok công khai' : 'Chưa có số liệu';
+const state = { username: null, videos: [], summary: null, discovery: {}, scan:null, busy: new Set(), batch: false, discovering: false, detail: null, loadToken: 0 };
+let pollTimer;
+const scanActive=()=>['queued','running'].includes(state.scan?.status);
 let notify = console.info;
 async function api(path, options = {}) {
   const r = await fetch(path,{...options,headers:{'Content-Type':'application/json'}});
@@ -16,7 +18,9 @@ async function load(username = state.username) {
   const token = ++state.loadToken;
   const data = await api(`${path(username)}?days=${$('#video-period').value}`);
   if(state.username !== username || token !== state.loadToken) return;
-  state.videos = data.videos; state.summary = data.summary; state.discovery = data.discovery; render();
+  state.videos = data.videos; state.summary = data.summary; state.discovery = data.discovery; state.scan=data.scan; render();
+  clearTimeout(pollTimer);
+  if(scanActive())pollTimer=setTimeout(()=>void load(username).catch(error=>notify(error.message,true)),1500);
 }
 function selected() {
   const days = Number($('#video-period').value);const now=Date.now();const key=$('#video-sort').value;
@@ -35,10 +39,19 @@ function render() {
   $('#video-chart').innerHTML=top.length?`<svg viewBox="0 0 800 ${top.length*34+8}" class="video-bars" role="img" aria-label="So sánh lượt xem của các video đang theo dõi">${top.map((v,i)=>`<text x="0" y="${i*34+24}">${escape((v.caption||v.id).slice(0,25))}</text><rect x="245" y="${i*34+10}" width="${v.views/max*435}" height="20" rx="4"/><text x="${250+v.views/max*435}" y="${i*34+24}" class="bar-value">${num(v.views)}</text>`).join('')}</svg>`:'<p class="helper">Biểu đồ xuất hiện khi có số liệu lượt xem.</p>';
   $('#video-rows').innerHTML=videos.map(video=>{const busy=state.busy.has(`${state.username}:${video.id}`);return `<tr><td><a href="${escape(video.url)}" target="_blank" rel="noopener noreferrer" class="video-caption">${escape(video.caption||'Video chưa lấy được mô tả')} ↗</a><small class="video-id">${video.id}</small><span class="video-source ${video.source==='manual'?'manual':''}">${source(video.source)}</span>${video.syncError?`<small class="video-inline-error" title="${escape(video.syncError)}">Chưa cập nhật được chỉ số</small>`:''}<small class="video-id">${video.lastSuccessAt?escape(date(video.lastSuccessAt)):video.lastMetadataAt?'Đã lấy mô tả · chưa có chỉ số':'Chưa cập nhật'}</small></td><td>${escape(video.publishedAt?new Date(video.publishedAt).toLocaleDateString('vi-VN'):'—')}<small class="video-id">${video.duration==null?'':`${num(video.duration)} giây`}</small></td><td class="num">${num(video.views)}</td><td title="${video.growthSince?'So với '+escape(date(video.growthSince)):''}">${video.viewGrowth==null?'—':(video.viewGrowth>0?'+':'')+num(video.viewGrowth)}</td><td>${percent(video.engagementRate)}</td><td>${num(video.likes)}</td><td>${num(video.comments)}</td><td>${num(video.shares)}</td><td>${num(video.saves)}</td><td><div class="row-actions"><button class="icon-button" data-video-action="refresh" data-id="${video.id}" aria-label="Cập nhật video ${video.id}" ${busy?'disabled':''}>↻</button><button class="icon-button" data-video-action="history" data-id="${video.id}" aria-label="Lịch sử và nhập số liệu video ${video.id}">▥</button><button class="icon-button danger" data-video-action="delete" data-id="${video.id}" aria-label="Xóa video ${video.id}">×</button></div></td></tr>`;}).join('');
   $('#video-empty').hidden=videos.length>0;
-  $('#video-empty').textContent=state.videos.length?'Không có video phù hợp với bộ lọc ngày đăng. Video chưa có ngày đăng chỉ hiển thị ở “Tất cả ngày đăng”.':'Chưa theo dõi video nào. Tìm video của kênh hoặc dán link video để bắt đầu.';
-  $('#refresh-videos').disabled=state.batch||!state.videos.length;
+  $('#video-empty').textContent=state.videos.length?'Không có video phù hợp với bộ lọc ngày đăng. Video chưa có ngày đăng chỉ hiển thị ở “Tất cả ngày đăng”.':'Chưa có video được theo dõi. Bấm Quét tự động để lấy danh sách và chỉ số của kênh.';
+  $('#refresh-videos').disabled=state.batch||scanActive()||!state.videos.length;
   $('#refresh-videos').textContent=state.batch?'↻ Đang cập nhật…':'↻ Cập nhật video';
-  $('#discover-videos').disabled=state.discovering||state.batch;
+  $('#discover-videos').disabled=state.discovering||state.batch||scanActive();
+  $('#discover-videos').textContent=scanActive()?'⌕ Đang quét…':'⌕ Quét tự động';
+  $('#scan-delay').disabled=scanActive();$('#scan-limit').disabled=scanActive();$('#stop-scan').hidden=!scanActive();
+  $('#scan-progress').hidden=!state.scan;
+  if(state.scan){
+    const scan=state.scan;const remaining=scan.nextAt?Math.max(0,Math.ceil((scan.nextAt-Date.now())/1000)):0;
+    $('#scan-message').textContent=scan.message+(remaining?` Còn ${remaining} giây.`:'');
+    $('#scan-bar').max=Math.max(scan.total||scan.limit,1);$('#scan-bar').value=scan.processed||scan.found;
+    $('#scan-counts').textContent=`Đã tìm ${scan.found} video · ${scan.withMetrics} có lượt xem · đã xử lý ${scan.processed}/${scan.total||'—'} · nghỉ ${scan.delaySeconds} giây${scan.errorCode?' · '+scan.errorCode:''}`;
+  }
   $('#export-videos').href=`${path(state.username)}/export.csv?days=${$('#video-period').value}`;
 }
 async function refreshOne(username,id) {
@@ -53,7 +66,7 @@ async function refreshMany(username,ids) {
   catch(error){notify(error.message,true);}finally{state.batch=false;if(state.username)render();}
 }
 export async function openVideos(account,toast) {
-  notify=toast;state.username=account.username;state.summary=null;state.videos=[];
+  notify=toast;state.username=account.username;state.summary=null;state.videos=[];state.scan=null;clearTimeout(pollTimer);
   $('#video-dialog').dataset.channelTotal=account.videos??'';$('#video-channel-name').textContent=`${account.displayName||account.username} · @${account.username}`;
   $('#video-links').placeholder=`https://www.tiktok.com/@${account.username}/video/ID`;
   $('#video-period').value='0';$('#video-sort').value='views';$('#video-summary').innerHTML='';$('#video-rows').innerHTML='';$('#video-chart').innerHTML='';$('#video-warning').hidden=true;$('#video-coverage').textContent='Đang tải dữ liệu…';
@@ -61,16 +74,16 @@ export async function openVideos(account,toast) {
   try{await load(account.username);}catch(error){$('#video-warning').hidden=false;$('#video-warning').textContent=error.message;}
 }
 $('#close-videos').addEventListener('click',()=>$('#video-dialog').close());
-$('#video-dialog').addEventListener('close',()=>{state.username=null;state.loadToken++;});
+$('#video-dialog').addEventListener('close',()=>{state.username=null;state.loadToken++;clearTimeout(pollTimer);});
 $('#video-period').addEventListener('change',()=>void load().catch(error=>notify(error.message,true)));
 $('#video-sort').addEventListener('change',render);
 $('#refresh-videos').addEventListener('click',()=>void refreshMany(state.username,state.videos.map(v=>v.id)));
 $('#discover-videos').addEventListener('click',async()=>{
   const username=state.username;state.discovering=true;render();
-  try{const data=await api(`${path(username)}/discover`,{method:'POST',body:'{}'});if(state.username!==username)return;await load(username);
-    if(data.discovery.syncError)notify(data.discovery.syncError,true);else{notify(`Đã tìm và theo dõi ${data.importedIds.length} video từ trang công khai. Danh sách có thể chưa đầy đủ.`);if(data.needsRefresh.length)void refreshMany(username,data.needsRefresh);}}
+  try{await api(`${path(username)}/scan`,{method:'POST',body:JSON.stringify({delaySeconds:Number($('#scan-delay').value),limit:Number($('#scan-limit').value)})});if(state.username!==username)return;await load(username);}
   catch(error){notify(error.message,true);}finally{state.discovering=false;if(state.username)render();}
 });
+$('#stop-scan').addEventListener('click',async()=>{try{await api(`${path(state.username)}/scan/cancel`,{method:'POST',body:'{}'});await load();}catch(error){notify(error.message,true);}});
 $('#video-add-form').addEventListener('submit',async event=>{
   event.preventDefault();const username=state.username;$('#add-video-button').disabled=true;
   try{const links=$('#video-links').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);const data=await api(path(username),{method:'POST',body:JSON.stringify({links})});if(state.username!==username)return;$('#video-links').value='';await load(username);notify(`Đã lưu ${data.addedIds.length} link video.`);if(!state.batch)void refreshMany(username,data.addedIds);else notify('Đã lưu link. Bấm cập nhật video sau khi lượt hiện tại hoàn tất.');}

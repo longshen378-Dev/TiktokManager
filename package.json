@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=24.19.0" },
+  "dependencies": { "playwright-core": "1.64.0" },
   "scripts": {
+    "prestart": "node scripts/prepare.js",
+    "preopen": "node scripts/prepare.js",
+    "predev": "node scripts/prepare.js",
     "start": "node --use-env-proxy server.js",
     "open": "node --use-env-proxy launch.js",
     "dev": "node --use-env-proxy --watch server.js",

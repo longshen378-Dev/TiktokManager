@@ -5,6 +5,8 @@ import { join, dirname } from 'node:path';
 import { createStore } from './lib/store.js';
 import { parseUsername, fetchProfile, ProfileError } from './lib/tiktok.js';
 import { parseVideoLink, fetchVideo, discoverChannelVideos, engagementRate, summarizeVideos } from './lib/videos.js';
+import { createBrowserScanner } from './lib/browser-scanner.js';
+import { createScanManager } from './lib/scans.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const fields = ['username', 'displayName', 'profileUrl', 'followers', 'following', 'likes', 'videos', 'verified', 'privateAccount', 'bio', 'group', 'status', 'notes', 'lastSuccessAt', 'syncError'];
@@ -40,7 +42,13 @@ async function jsonBody(request) {
 }
 
 export function createApp({ store = createStore(process.env.DATA_FILE || join(root, 'data/accounts.sqlite')), profileFetcher = fetchProfile,
-  videoFetcher = fetchVideo, videoDiscoverer = discoverChannelVideos } = {}) {
+  videoFetcher = fetchVideo, videoDiscoverer = discoverChannelVideos, browserScanner } = {}) {
+  const browser=browserScanner||createBrowserScanner({dataDir:join(root,'data/browser-profile')});
+  const defaultProviders=videoFetcher===fetchVideo&&videoDiscoverer===discoverChannelVideos;
+  const useBrowser=defaultProviders&&process.env.TIKTOK_SCAN_MODE!=='http';
+  const discover=(username,options)=>useBrowser?browser.discover(username,options):videoDiscoverer(username,videoDiscoverer===discoverChannelVideos?options?.fetcher:options);
+  const refresh=(link,username,options)=>useBrowser?browser.video(link,username,options):videoFetcher(link,username,videoFetcher===fetchVideo?options?.fetcher:options);
+  const scans=createScanManager({store,discover,refresh});
   let queue = Promise.resolve();
   const running = new Map();
   function queued(key, action) {
@@ -70,13 +78,13 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
   }
   function videoPayload(username, days = 0) {
     const videos = store.listVideos(username).map(annotatedVideo);
-    return { videos, summary: summarizeVideos(videos, days), discovery: store.getVideoSync(username) };
+    return { videos, summary: summarizeVideos(videos, days), discovery: store.getVideoSync(username), scan:scans.state(username), browserAvailable:browser.available };
   }
   function syncVideo(username, id) {
     return queued(`video:${username}:${id}`, async () => {
       const video = store.getVideo(username,id);
       if (!video) return null;
-      try { return store.videoSuccess(username,id,await videoFetcher(video.url,username)); }
+      try { return store.videoSuccess(username,id,await refresh(video.url,username)); }
       catch (error) { return store.videoFailure(username,id,error instanceof ProfileError ? error : new ProfileError('FETCH_ERROR','Không cập nhật được video. Hãy thử lại sau.')); }
     });
   }
@@ -98,7 +106,7 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
         }
       }
       if (request.method === 'GET' && path === '/api/health') return send(200, { ok: true, accounts: store.list().length });
-      if (request.method === 'GET' && path === '/api/accounts') return send(200, { accounts: store.list() });
+      if (request.method === 'GET' && path === '/api/accounts') return send(200, { accounts: store.list().map(account=>({...account,videoScan:scans.state(account.username)})) });
       if (request.method === 'GET' && path === '/api/export.csv') {
         response.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="tiktok-accounts.csv"', 'Cache-Control': 'no-store' });
         return response.end(exportCsv(store.list()));
@@ -107,11 +115,14 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
         const body = await jsonBody(request);
         if (!Array.isArray(body.links) || body.links.length < 1 || body.links.length > 50) throw new ProfileError('BAD_REQUEST', 'Nhập từ 1 đến 50 link mỗi lần.');
         const usernames = [...new Set(body.links.map(parseUsername))];
+        if('scanVideos' in body&&typeof body.scanVideos!=='boolean')throw new ProfileError('BAD_REQUEST','Tùy chọn quét video cần là true hoặc false.');
+        const newUsernames=usernames.filter(username=>!store.get(username));
         const results = usernames.map(username => ({ account: store.add(username) }));
+        const scansStarted=body.scanVideos===true?newUsernames.map(username=>scans.start(username)):[];
         // Persist links immediately; sync is explicit so importing many accounts never blocks the UI.
-        return send(201, { results });
+        return send(201, { results,scansStarted });
       }
-      const videoMatch = path.match(/^\/api\/accounts\/([^/]+)\/videos(?:\/(discover|export\.csv|\d{10,22})(?:\/(refresh|history|metrics))?)?$/);
+      const videoMatch = path.match(/^\/api\/accounts\/([^/]+)\/videos(?:\/(scan|discover|export\.csv|\d{10,22})(?:\/(refresh|history|metrics|cancel))?)?$/);
       if (videoMatch) {
         const username = parseUsername(decodeURIComponent(videoMatch[1]));
         if (!store.get(username)) return send(404, { error: 'Không tìm thấy tài khoản.' });
@@ -119,6 +130,11 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
         const days = Number(url.searchParams.get('days') || 0);
         if (![0,7,30,90].includes(days)) throw new ProfileError('BAD_REQUEST','Khoảng ngày không hợp lệ.');
         if (request.method === 'GET' && !action) return send(200,videoPayload(username,days));
+        if(action==='scan') {
+          if(request.method==='GET'&&!subaction)return send(200,{scan:scans.state(username)});
+          if(request.method==='POST'&&!subaction){const body=await jsonBody(request);return send(202,{scan:scans.start(username,{delaySeconds:body.delaySeconds??5,limit:body.limit??50})});}
+          if(request.method==='POST'&&subaction==='cancel'){await jsonBody(request);return send(200,{scan:scans.cancel(username)});}
+        }
         if (request.method === 'GET' && action === 'export.csv' && !subaction) {
           const videos = store.listVideos(username).map(annotatedVideo).filter(video => !days || (video.publishedAt && Date.parse(video.publishedAt) >= Date.now() - days * 86_400_000 && Date.parse(video.publishedAt) <= Date.now()));
           response.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${username}-videos.csv"`, 'Cache-Control':'no-store' });
@@ -226,7 +242,8 @@ export function createApp({ store = createStore(process.env.DATA_FILE || join(ro
     }
   });
   server.requestTimeout = 30_000;
-  return { server, store };
+  server.on('close',()=>{scans.close();void browser.close().catch(()=>{});});
+  return { server, store, scans };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -12,5 +12,10 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+node scripts/prepare.js
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
 node --use-env-proxy launch.js
 pause

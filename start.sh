@@ -9,4 +9,5 @@ if ! node -e "const v=process.versions.node.split('.').map(Number); process.exit
   echo 'Node.js quá cũ. Hãy cài Node.js 24.19 trở lên.'
   exit 1
 fi
+node scripts/prepare.js
 exec node --use-env-proxy launch.js

@@ -90,9 +90,9 @@ $('#add-form').addEventListener('submit', async event => {
   event.preventDefault(); const links = $('#links').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   $('#add-button').disabled = true;
   try {
-    const { results } = await api('/api/accounts', { method: 'POST', body: JSON.stringify({ links }) });
+    const { results,scansStarted } = await api('/api/accounts', { method: 'POST', body: JSON.stringify({ links,scanVideos:$('#auto-scan').checked }) });
     results.forEach(({ account }) => upsert(account)); $('#links').value = ''; render();
-    toast(`Đã lưu ${results.length} tài khoản.`);
+    toast(`Đã lưu ${results.length} tài khoản.${scansStarted?.length?' Quét video đã chạy nền; bấm Phân tích để xem tiến độ.':''}`);
     const usernames = results.map(r => r.account.username);
     if (!state.refreshingAll) void refreshMany(usernames); else toast('Đã lưu tài khoản. Bấm cập nhật sau khi lượt hiện tại hoàn tất.');
   } catch (error) { toast(error.message, true); }
